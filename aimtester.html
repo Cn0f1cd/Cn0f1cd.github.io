@@ -33,12 +33,16 @@
             padding: 10px 20px;
             font-size: 18px;
         }
+        #highscore {
+            color: #ffd700;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
     <div id="ui">
         <h1>🎯 喵准测试 AimTester</h1>
-        <div>时间: <span id="time">60</span>s | 分数: <span id="score">0</span> | 命中: <span id="hits">0</span></div>
+        <div>时间: <span id="time">60</span>s | 分数: <span id="score">0</span> | 命中: <span id="hits">0</span> | 最高分: <span id="highscore">0</span></div>
         <button onclick="startGame()">开始游戏</button>
         <button onclick="restartGame()">重新开始</button>
     </div>
@@ -53,6 +57,9 @@
         let targets = [];
         let gameRunning = false;
         let timer;
+
+        // 本地最高分记录
+        let highScore = parseInt(localStorage.getItem('aimTesterHighScore')) || 0;
 
         class Target {
             constructor() {
@@ -124,13 +131,22 @@
         function endGame() {
             gameRunning = false;
             clearInterval(timer);
-            alert(`游戏结束！\n最终分数: ${score}\n命中次数: ${hits}`);
+
+            // 更新最高分
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('aimTesterHighScore', highScore);
+            }
+
+            alert(`游戏结束！\n最终分数: ${score}\n命中次数: ${hits}\n\n🎉 最高记录: ${highScore}`);
+            updateUI();
         }
 
         function updateUI() {
             document.getElementById('time').textContent = timeLeft;
             document.getElementById('score').textContent = score;
             document.getElementById('hits').textContent = hits;
+            document.getElementById('highscore').textContent = highScore;
         }
 
         function restartGame() {
@@ -170,6 +186,9 @@
         ctx.fillStyle = '#fff';
         ctx.font = '30px Arial';
         ctx.fillText('点击「开始游戏」开始喵准测试！', 150, 300);
+
+        // 初始显示最高分
+        updateUI();
     </script>
 </body>
 </html>
