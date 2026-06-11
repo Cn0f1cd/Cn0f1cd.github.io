@@ -1,1 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AimTester - 喵准测试</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0a0a0a;
+            color: #0f0;
+            font-family: 'Press Start 2P', Arial, sans-serif;
+            text-align: center;
+            overflow: hidden;
+        }
+        canvas {
+            border: 4px solid #0f0;
+            box-shadow: 0 0 40px #0f0;
+            image-rendering: pixelated;
+            background: #000;
+        }
+        #ui {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10,10,10,0.9);
+            padding: 15px 30px;
+            border: 3px solid #0f0;
+            border-radius: 10px;
+            z-index: 100;
+            min-width: 720px;
+            box-shadow: 0 0 20px #0f0;
+        }
+        button {
+            margin: 6px;
+            padding: 10px 18px;
+            font-size: 15px;
+            background: #111;
+            color: #0f0;
+            border: 2px solid #0f0;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        button:hover { background: #0f0; color: #000; }
+        button.active { background: #0f0 !important; color: #000 !important; }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.95);
+            padding: 30px 50px;
+            border: 4px solid #0f0;
+            display: none;
+            z-index: 200;
+        }
+        h1 { margin: 8px 0; text-shadow: 0 0 10px #0f0; }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="ui">
+        <h1>🎯 喵准测试 AimTester</h1>
+        <div>时间: <span id="time">60</span>s | 分数: <span id="score">0</span> | 命中: <span id="hits">0</span> | 最高: <span id="highscore">0</span></div>
+        
+        <div style="margin:12px 0;">
+            <strong>难度：</strong>
+            <button onclick="setDifficulty(1)" id="diff1">简单</button>
+            <button onclick="setDifficulty(2)" id="diff2" class="active">中等</button>
+            <button onclick="setDifficulty(3)" id="diff3">困难</button>
+        </div>
+        
+        <div style="margin:12px 0;">
+            <strong>模式：</strong>
+            <button onclick="setMode(0)" id="mode0" class="active">普通</button>
+            <button onclick="setMode(1)" id="mode1">跟枪</button>
+            <button onclick="setMode(2)" id="mode2">静态</button>
+            <button onclick="setMode(3)" id="mode3">无限</button>
+        </div>
+        
+        <button onclick="startGame()" style="font-size:22px; padding:16px 50px; margin-top:10px;">🚀 开始游戏</button>
+    </div>
 
+    <canvas id="game" width="800" height="600"></canvas>
+
+    <div id="gameOver">
+        <h1>游戏结束</h1>
+        <p>最终得分: <span id="finalScore">0</span></p>
+        <p>最高记录: <span id="finalHigh">0</span></p>
+        <button onclick="restartGame()" style="font-size:18px; padding:12px 30px;">再来一局 (R)</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let targets = [];
+        let score = 0;
+        let hits = 0;
+        let timeLeft = 60;
+        let gameRunning = false;
+        let timer;
+        let difficulty = 2;
+        let mode = 0; // 0:普通 1:跟枪 2:静态 3:无限
+        let highScore = localStorage.getItem('aimHighScore') || 0;
+        document.getElementById('highscore').textContent = highScore;
+
+        const colors = ['#f00', '#00f', '#f0f', '#ff0', '#0f0'];
+        const shapes = ['circle', 'square', 'triangle'];
+
+        class Target {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.size = difficulty === 1 ? 35 : difficulty === 3 ? 18 : 25;
+                this.x = Math.random() * (canvas.width - this.size) + this.size/2;
+                this.y = Math.random() * (canvas.height - this.size) + this.size/2;
+                this.speed = (difficulty === 1 ? 1.5 : difficulty === 3 ? 4 : 2.5) + Math.random() * 1;
+                this.vx = (Math.random() - 0.5) * this.speed;
+                this.vy = (Math.random() - 0.5) * this.speed;
+                this.color = colors[Math.floor(Math.random() * colors.length)];
+                this.shape = shapes[Math.floor(Math.random() * shapes.length)];
+                this.points = Math.floor(30 / (this.size / 20));
+            }
+            update(mouseX, mouseY) {
+                if (mode === 1) { // 跟枪模式
+                    const dx = mouseX - this.x;
+                    const dy = mouseY - this.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist > 5) {
+                        this.x += dx * 0.12;
+                        this.y += dy * 0.12;
+                    }
+                } else if (mode !== 2) { // 非静态
+                    this.x += this.vx;
+                    this.y += this.vy;
+                    if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+                    if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+                }
+            }
+            draw() {
+                ctx.fillStyle = this.color;
+                if (this.shape === 'circle') {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size/2, 0, Math.PI*2);
+                    ctx.fill();
+                } else if (this.shape === 'square') {
+                    ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
+                } else {
+                    ctx.beginPath();
+                    ctx.moveTo(this.x, this.y - this.size/2);
+                    ctx.lineTo(this.x - this.size/2, this.y + this.size/2);
+                    ctx.lineTo(this.x + this.size/2, this.y + this.size/2);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+        }
+
+        function playHitSound() {
+            const audio = new AudioContext();
+            const osc = audio.createOscillator();
+            osc.frequency.setValueAtTime(800, audio.currentTime);
+            const gain = audio.createGain();
+            osc.connect(gain);
+            gain.connect(audio.destination);
+            gain.gain.value = 0.3;
+            osc.start();
+            osc.stop(audio.currentTime + 0.08);
+        }
+
+        function playEndSound() {
+            const audio = new AudioContext();
+            const osc = audio.createOscillator();
+            osc.frequency.setValueAtTime(300, audio.currentTime);
+            osc.stop(audio.currentTime + 0.6);
+            osc.connect(audio.destination);
+            osc.start();
+        }
+
+        function updateUI() {
+            document.getElementById('time').textContent = timeLeft;
+            document.getElementById('score').textContent = score;
+            document.getElementById('hits').textContent = hits;
+        }
+
+        function spawnTargets(count) {
+            targets = [];
+            for (let i = 0; i < count; i++) {
+                targets.push(new Target());
+            }
+        }
+
+        function gameLoop(mouseX, mouseY) {
+            if (!gameRunning) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            targets.forEach((t, i) => {
+                t.update(mouseX, mouseY);
+                t.draw();
+            });
+
+            updateUI();
+        }
+
+        let mouseX = 400, mouseY = 300;
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('click', e => {
+            if (!gameRunning) return;
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            for (let i = targets.length - 1; i >= 0; i--) {
+                const t = targets[i];
+                const dx = clickX - t.x;
+                const dy = clickY - t.y;
+                if (Math.sqrt(dx*dx + dy*dy) < t.size/2 + 5) {
+                    score += t.points;
+                    hits++;
+                    playHitSound();
+                    targets.splice(i, 1);
+                    targets.push(new Target());
+                    break;
+                }
+            }
+        });
+
+        function startGame() {
+            gameRunning = true;
+            score = 0;
+            hits = 0;
+            timeLeft = mode === 3 ? 999 : 60;
+            document.getElementById('gameOver').style.display = 'none';
+            
+            const targetCount = difficulty === 1 ? 4 : difficulty === 3 ? 8 : 6;
+            spawnTargets(targetCount);
+            
+            if (mode !== 3) {
+                timer = setInterval(() => {
+                    timeLeft--;
+                    if (timeLeft <= 0) endGame();
+                }, 1000);
+            }
+            
+            const loop = setInterval(() => {
+                if (mode === 3) timeLeft++;
+                gameLoop(mouseX, mouseY);
+                if (!gameRunning) clearInterval(loop);
+            }, 16);
+        }
+
+        function endGame() {
+            gameRunning = false;
+            clearInterval(timer);
+            playEndSound();
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('aimHighScore', highScore);
+            }
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('finalHigh').textContent = highScore;
+            document.getElementById('gameOver').style.display = 'block';
